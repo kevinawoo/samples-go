@@ -1,6 +1,10 @@
 package helloworld
 
 import (
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -37,10 +41,29 @@ func (s *replayTestSuite) TearDownTest() {
 //
 // Or from Temporal Web UI. And you may need to change workflowType in the first event.
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
-	replayer := worker.NewWorkflowReplayer()
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		EnableLoggingInReplay:    true,
+		DisableDeadlockDetection: true,
+	})
+	require.NoError(s.T(), err)
+
+	worker.EnableVerboseLogging(true)
+	l := slog.Default()
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	replayer.RegisterWorkflow(Workflow)
 
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(nil, "helloworld.json")
+	entries, err := os.ReadDir(".")
 	require.NoError(s.T(), err)
+
+	//err = replayer.ReplayWorkflowHistoryFromJSONFile(l, "runId-events.json")
+	//require.NoError(s.T(), err)
+
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".json") {
+			fmt.Println("running", e.Name())
+			err = replayer.ReplayWorkflowHistoryFromJSONFile(l, e.Name())
+			require.NoError(s.T(), err)
+		}
+	}
 }

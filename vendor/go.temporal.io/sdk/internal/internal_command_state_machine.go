@@ -1149,6 +1149,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 }
 
 func (h *commandsHelper) handleActivityTaskScheduled(activityID string, scheduledEventID int64) {
+	fmt.Println("internal_command_state_machine.go:1152", len(h.scheduledEventIDToActivityID))
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
 		panicMsg := fmt.Sprintf("[TMPRL1100] lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
 			scheduledEventID, activityID)

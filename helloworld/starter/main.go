@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"go.temporal.io/api/enums/v1"
 	"log"
 
 	"go.temporal.io/sdk/client"
@@ -18,8 +19,9 @@ func main() {
 	defer c.Close()
 
 	workflowOptions := client.StartWorkflowOptions{
-		ID:        "hello_world_workflowID",
-		TaskQueue: "hello-world",
+		ID:                    "hello_world_workflowID",
+		TaskQueue:             "hello-world",
+		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_TERMINATE_IF_RUNNING,
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), workflowOptions, helloworld.Workflow, "Temporal")
@@ -30,10 +32,10 @@ func main() {
 	log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
 
 	// Synchronously wait for the workflow completion.
-	var result string
-	err = we.Get(context.Background(), &result)
-	if err != nil {
-		log.Fatalln("Unable get workflow result", err)
-	}
-	log.Println("Workflow result:", result)
+	//var result string
+	//err = we.Get(context.Background(), &result)
+	//if err != nil {
+	//	log.Fatalln("Unable get workflow result", err)
+	//}
+	//log.Println("Workflow result:", result)
 }
