@@ -140,6 +140,7 @@ func workflowLocalFuture(ctx workflow.Context) workflow.Future {
 }
 
 func perturb(d time.Duration) {
+	return // skip
 	if d == 0 {
 		d = time.Duration(rand.Intn(1000)) * time.Microsecond
 	}

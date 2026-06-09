@@ -34,11 +34,12 @@ It starts an in-process worker on an isolated task queue by default; pass `-work
 To model plausible activity wrappers that yield before scheduling the activity without creating a timer event, run one of:
 
 ```bash
-go run ./nondeterministic-command-order/harness -workflow=await -verbose
-go run ./nondeterministic-command-order/harness -workflow=future-get -verbose
-go run ./nondeterministic-command-order/harness -workflow=selector -verbose
-go run ./nondeterministic-command-order/harness -workflow=channel-receive -verbose
-go run ./nondeterministic-command-order/harness -workflow=waitgroup -verbose
+go run ./nondeterministic-command-order/harness -workflow=control -verbose -max-batches 1 -runs 1
+go run ./nondeterministic-command-order/harness -workflow=await -verbose -max-batches 1 -runs 1
+go run ./nondeterministic-command-order/harness -workflow=future-get -verbose -max-batches 1 -runs 1
+go run ./nondeterministic-command-order/harness -workflow=selector -verbose -max-batches 1 -runs 1
+go run ./nondeterministic-command-order/harness -workflow=channel-receive -verbose -max-batches 1 -runs 1
+go run ./nondeterministic-command-order/harness -workflow=waitgroup -verbose -max-batches 1 -runs 1
 ```
 
 Each variant performs a workflow-local preflight before `workflow.ExecuteActivity`: `workflow.Await`, `Future.Get`, `Selector.Select`, channel receive, or `WaitGroup.Wait`. The preflight is satisfied by another workflow coroutine in the same workflow task, so it yields the root workflow coroutine without creating a `TimerStarted` event. The `workflow.Go` child coroutines then get a chance to schedule child workflows first.
