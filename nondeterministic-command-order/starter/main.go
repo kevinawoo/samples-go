@@ -16,7 +16,7 @@ func main() {
 	defer c.Close()
 
 	we, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
-		ID:        "nondeterministic-command-order-workflow-id",
+		//ID:        "nondeterministic-command-order-workflow-id",
 		TaskQueue: sample.TaskQueue,
 	}, sample.CommandOrderWorkflow)
 	if err != nil {

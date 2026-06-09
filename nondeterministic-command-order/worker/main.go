@@ -17,6 +17,12 @@ func main() {
 
 	w := worker.New(c, sample.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(sample.CommandOrderWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithHiddenYieldWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithAwaitYieldWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithFutureGetYieldWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithSelectorYieldWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithChannelReceiveYieldWorkflow)
+	w.RegisterWorkflow(sample.CommandOrderWithWaitGroupYieldWorkflow)
 	w.RegisterWorkflow(sample.ChildWorkflow)
 	w.RegisterActivity(sample.Activity)
 
