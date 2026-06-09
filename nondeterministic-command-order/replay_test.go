@@ -1,6 +1,7 @@
 package nondeterministic_command_order
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func TestReplayWithPerturbExposesNondeterministicCommandOrder(t *testing.T) {
 	var replayMatchedHistory bool
 	var replayMismatchedHistory bool
 	for i := 0; i < 500; i++ {
+		fmt.Println("tries:", i)
 		err := replay(history)
 		if err == nil {
 			replayMatchedHistory = true
