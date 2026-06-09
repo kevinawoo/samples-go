@@ -2,59 +2,40 @@ package nondeterministic_command_order
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"runtime"
-	"sync"
 	"time"
 
 	"go.temporal.io/sdk/workflow"
 )
 
 const TaskQueue = "nondeterministic-command-order"
+const childCount = 10
 
-// CommandOrderWorkflow intentionally demonstrates an unsafe workflow pattern.
-//
-// Do not copy this into production code: it uses real Go goroutines inside
-// workflow code. The goroutines race to emit Temporal commands, so the command
-// order can change across executions and replay.
+// CommandOrderWorkflow mirrors the production shape being investigated:
+// schedule child workflows from workflow.Go coroutines, then schedule an
+// activity from the root workflow coroutine.
 func CommandOrderWorkflow(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		ActivityID:             "ordering-activity",
 		ScheduleToCloseTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
 	})
-	childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
-		WorkflowID: "ordering-child",
-		TaskQueue:  TaskQueue,
-	})
 
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	start := make(chan struct{})
+	for i := 0; i < childCount; i++ {
+		i := i
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			perturb()
+			childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+				WorkflowID: childWorkflowID(i),
+				TaskQueue:  TaskQueue,
+			})
+			_ = workflow.ExecuteChildWorkflow(childCtx, ChildWorkflow, i).Get(ctx, nil)
+		})
+	}
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		<-start
-		perturb()
-		mu.Lock()
-		defer mu.Unlock()
-		_ = workflow.ExecuteActivity(ctx, Activity)
-	}()
-	go func() {
-		defer wg.Done()
-		<-start
-		perturb()
-		mu.Lock()
-		defer mu.Unlock()
-		_ = workflow.ExecuteChildWorkflow(childCtx, ChildWorkflow)
-	}()
-
-	close(start)
-	wg.Wait()
-
-	// Keep the workflow open after the first workflow task. The replay test only
-	// needs the first batch of command events to show command-order drift.
+	_ = workflow.ExecuteActivity(ctx, Activity).Get(ctx, nil)
 	_ = workflow.Await(ctx, func() bool { return false })
 	return nil
 }
@@ -64,8 +45,12 @@ func perturb() {
 	time.Sleep(time.Duration(rand.Intn(1000)) * time.Microsecond)
 }
 
-func ChildWorkflow(ctx workflow.Context) error {
-	workflow.GetLogger(ctx).Info("child workflow ran")
+func childWorkflowID(i int) string {
+	return fmt.Sprintf("ordering-child-%02d", i)
+}
+
+func ChildWorkflow(ctx workflow.Context, i int) error {
+	workflow.GetLogger(ctx).Info("child workflow ran", "index", i)
 	return nil
 }
 

@@ -1,7 +1,6 @@
 package nondeterministic_command_order
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -16,30 +15,25 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestReplayWithPerturbExposesNondeterministicCommandOrder(t *testing.T) {
-	history := activityThenChildHistory()
+type noopLogger struct{}
 
-	var replayMatchedHistory bool
-	var replayMismatchedHistory bool
-	for i := 0; i < 500; i++ {
-		fmt.Println("tries:", i)
-		err := replay(history)
-		if err == nil {
-			replayMatchedHistory = true
-			continue
-		}
-		if isCommandOrderMismatch(err) {
-			replayMismatchedHistory = true
-		} else {
-			t.Fatalf("unexpected replay error: %v", err)
-		}
-		if replayMatchedHistory && replayMismatchedHistory {
-			return
-		}
+func (noopLogger) Debug(string, ...interface{}) {}
+func (noopLogger) Info(string, ...interface{})  {}
+func (noopLogger) Warn(string, ...interface{})  {}
+func (noopLogger) Error(string, ...interface{}) {}
+
+func TestReplayWorkflowGoPatternKeepsActivityBeforeChildren(t *testing.T) {
+	history := activityThenChildrenHistory()
+
+	for i := 0; i < 100; i++ {
+		require.NoError(t, replay(history))
 	}
+}
 
-	require.True(t, replayMatchedHistory, "perturbation never produced activity-first command order")
-	require.True(t, replayMismatchedHistory, "perturbation never produced child-first command order")
+func TestReplayChildBeforeActivityHistoryFails(t *testing.T) {
+	err := replay(childrenThenActivityHistory())
+	require.Error(t, err)
+	require.True(t, isCommandOrderMismatch(err), "unexpected replay error: %v", err)
 }
 
 func isCommandOrderMismatch(err error) bool {
@@ -52,12 +46,20 @@ func replay(history *historypb.History) error {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(CommandOrderWorkflow)
 	replayer.RegisterWorkflow(ChildWorkflow)
-	return replayer.ReplayWorkflowHistory(nil, history)
+	return replayer.ReplayWorkflowHistory(noopLogger{}, history)
 }
 
-func activityThenChildHistory() *historypb.History {
+func activityThenChildrenHistory() *historypb.History {
+	return commandOrderHistory(true)
+}
+
+func childrenThenActivityHistory() *historypb.History {
+	return commandOrderHistory(false)
+}
+
+func commandOrderHistory(activityFirst bool) *historypb.History {
 	ts := timestamppb.New(time.Unix(0, 0))
-	return &historypb.History{Events: []*historypb.HistoryEvent{
+	events := []*historypb.HistoryEvent{
 		{
 			EventId:   1,
 			EventTime: ts,
@@ -104,33 +106,53 @@ func activityThenChildHistory() *historypb.History {
 				},
 			},
 		},
-		{
-			EventId:   5,
-			EventTime: ts,
-			EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
-			Attributes: &historypb.HistoryEvent_ActivityTaskScheduledEventAttributes{
-				ActivityTaskScheduledEventAttributes: &historypb.ActivityTaskScheduledEventAttributes{
-					ActivityId:                   "ordering-activity",
-					ActivityType:                 &commonpb.ActivityType{Name: "Activity"},
-					TaskQueue:                    &taskqueuepb.TaskQueue{Name: TaskQueue},
-					ScheduleToCloseTimeout:       durationpb.New(time.Minute),
-					StartToCloseTimeout:          durationpb.New(time.Minute),
-					WorkflowTaskCompletedEventId: 4,
-				},
+	}
+
+	nextEventID := int64(5)
+	if activityFirst {
+		events = append(events, activityScheduledEvent(nextEventID, ts))
+		nextEventID++
+	}
+	for i := 0; i < childCount; i++ {
+		events = append(events, childInitiatedEvent(nextEventID, ts, i))
+		nextEventID++
+	}
+	if !activityFirst {
+		events = append(events, activityScheduledEvent(nextEventID, ts))
+	}
+	return &historypb.History{Events: events}
+}
+
+func activityScheduledEvent(eventID int64, ts *timestamppb.Timestamp) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
+		EventId:   eventID,
+		EventTime: ts,
+		EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
+		Attributes: &historypb.HistoryEvent_ActivityTaskScheduledEventAttributes{
+			ActivityTaskScheduledEventAttributes: &historypb.ActivityTaskScheduledEventAttributes{
+				ActivityId:                   "ordering-activity",
+				ActivityType:                 &commonpb.ActivityType{Name: "Activity"},
+				TaskQueue:                    &taskqueuepb.TaskQueue{Name: TaskQueue},
+				ScheduleToCloseTimeout:       durationpb.New(time.Minute),
+				StartToCloseTimeout:          durationpb.New(time.Minute),
+				WorkflowTaskCompletedEventId: 4,
 			},
 		},
-		{
-			EventId:   6,
-			EventTime: ts,
-			EventType: enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
-			Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{
-				StartChildWorkflowExecutionInitiatedEventAttributes: &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
-					WorkflowId:                   "ordering-child",
-					WorkflowType:                 &commonpb.WorkflowType{Name: "ChildWorkflow"},
-					TaskQueue:                    &taskqueuepb.TaskQueue{Name: TaskQueue},
-					WorkflowTaskCompletedEventId: 4,
-				},
+	}
+}
+
+func childInitiatedEvent(eventID int64, ts *timestamppb.Timestamp, i int) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
+		EventId:   eventID,
+		EventTime: ts,
+		EventType: enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
+		Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{
+			StartChildWorkflowExecutionInitiatedEventAttributes: &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
+				WorkflowId:                   childWorkflowID(i),
+				WorkflowType:                 &commonpb.WorkflowType{Name: "ChildWorkflow"},
+				TaskQueue:                    &taskqueuepb.TaskQueue{Name: TaskQueue},
+				WorkflowTaskCompletedEventId: 4,
 			},
 		},
-	}}
+	}
 }

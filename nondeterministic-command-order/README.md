@@ -1,29 +1,24 @@
 # Nondeterministic Command Order
 
-This sample intentionally demonstrates an unsafe workflow pattern.
+This sample mirrors the command-order shape of a workflow that starts child workflows inside `workflow.Go` coroutines, then schedules an activity on the root workflow coroutine.
 
-`CommandOrderWorkflow` starts real Go goroutines from workflow code. Those goroutines race to emit two Temporal commands: one activity command and one child workflow command. A normal mutex prevents concurrent SDK map writes, but the command that acquires the mutex first is still decided by the Go scheduler.
+The important behavior is that `workflow.Go` does not run the new coroutine body immediately at the call site. The root workflow coroutine keeps running, reaches `workflow.ExecuteActivity(...).Get(...)`, emits the activity command, and only then yields. After that yield, the child coroutines run and emit child workflow commands.
 
-That means one execution can send:
+So this shape consistently sends:
 
 ```text
 ScheduleActivityTask
 StartChildWorkflowExecution
-```
-
-and another execution or replay can send:
-
-```text
 StartChildWorkflowExecution
-ScheduleActivityTask
+...
 ```
 
 Run the replay reproduction:
 
 ```bash
-go test ./nondeterministic-command-order -run TestReplayWithPerturbExposesNondeterministicCommandOrder -count=1
+go test ./nondeterministic-command-order -count=1
 ```
 
-The test replays a small synthetic history where the activity was scheduled before the child workflow. The perturbation loop eventually produces both activity-first and child-first command orders, proving the command order is not stable.
+The replay test runs the workflow repeatedly with scheduling perturbation and verifies that an activity-first history remains replay-compatible. It also verifies that a child-first history fails replay.
 
-The fix is to emit Temporal commands from a workflow coroutine in a deterministic order, store the returned futures, and only use `workflow.Go`, selectors, channels, or wait groups for waiting/handling after the commands have been scheduled.
+If a real history has child workflow commands before the activity for this exact source shape, look for another yield point, helper behavior that schedules commands before the root activity, or a prior code version with different command order.
